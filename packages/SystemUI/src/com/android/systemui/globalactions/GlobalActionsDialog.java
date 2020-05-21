@@ -51,7 +51,6 @@ import android.graphics.Shader;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.media.AudioManager;
-import android.net.ConnectivityManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
@@ -171,6 +170,7 @@ class GlobalActionsDialog implements DialogInterface.OnDismissListener,
     private String[] mRestartMenuActions;
     private String[] mCurrentMenuActions;
     private boolean mIsRestartMenu;
+
     private BitSet mAirplaneModeBits;
     private final List<PhoneStateListener> mPhoneStateListeners = new ArrayList<>();
 
@@ -195,10 +195,6 @@ class GlobalActionsDialog implements DialogInterface.OnDismissListener,
         filter.addAction(lineageos.content.Intent.ACTION_UPDATE_POWER_MENU);
         filter.addAction(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED);
         context.registerReceiver(mBroadcastReceiver, filter);
-
-        ConnectivityManager cm = (ConnectivityManager)
-                context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        mHasTelephony = cm.isNetworkSupported(ConnectivityManager.TYPE_MOBILE);
 
         // get notified of phone state changes
         SubscriptionManager.from(mContext).addOnSubscriptionsChangedListener(
@@ -239,8 +235,7 @@ class GlobalActionsDialog implements DialogInterface.OnDismissListener,
      * otherwise fall back to {@link Settings.Global#AIRPLANE_MODE_ON}.
      */
     private void setupAirplaneModeListeners() {
-        TelephonyManager telephonyManager =
-                (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
+        TelephonyManager telephonyManager = mContext.getSystemService(TelephonyManager.class);
 
         for (PhoneStateListener listener : mPhoneStateListeners) {
             telephonyManager.listen(listener, PhoneStateListener.LISTEN_NONE);
@@ -253,14 +248,15 @@ class GlobalActionsDialog implements DialogInterface.OnDismissListener,
             mHasTelephony = true;
             mAirplaneModeBits = new BitSet(subInfoList.size());
             for (int i = 0; i < subInfoList.size(); i++) {
-                final int finalI = i;
-                PhoneStateListener subListener = new PhoneStateListener(subInfoList.get(finalI)
+                // we need the current index inside the listener, so make it final
+                final int subIndex = i;
+                PhoneStateListener subListener = new PhoneStateListener(subInfoList.get(subIndex)
                         .getSubscriptionId()) {
                     @Override
                     public void onServiceStateChanged(ServiceState serviceState) {
                         final boolean inAirplaneMode = serviceState.getState()
                                 == ServiceState.STATE_POWER_OFF;
-                        mAirplaneModeBits.set(finalI, inAirplaneMode);
+                        mAirplaneModeBits.set(subIndex, inAirplaneMode);
 
                         // we're in airplane mode if _any_ of the subscriptions say we are
                         mAirplaneState = mAirplaneModeBits.cardinality() > 0
@@ -1608,9 +1604,10 @@ class GlobalActionsDialog implements DialogInterface.OnDismissListener,
     };
 
     private ToggleAction.State getUpdatedAirplaneToggleState() {
-        return (Settings.Global.getInt(mContext.getContentResolver(),
-                    Settings.Global.AIRPLANE_MODE_ON, 0) == 1) ?
-                ToggleAction.State.On : ToggleAction.State.Off;
+        return Settings.Global.getInt(mContext.getContentResolver(),
+                Settings.Global.AIRPLANE_MODE_ON, 0) == 1
+                    ? ToggleAction.State.On
+                    : ToggleAction.State.Off;
     }
 
     private void onAirplaneModeChanged() {
